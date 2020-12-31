@@ -18,10 +18,11 @@
 language: python
 python:
   - "2.7"
+  - "3.7"
 before_install:
   - sudo apt-get install -qq python-svn libjpeg8-dev zlib1g-dev
-install: "pip install -r requirements.txt --use-mirrors"
+install: "pip install -r requirements.txt"
 before_script:
-  - ln -s /usr/lib/python2.7/dist-packages/pysvn $VIRTUAL_ENV/lib/python2.7/site-packages/
+  - ln -s /usr/lib/python*/dist-packages/pysvn $VIRTUAL_ENV/lib/python*/site-packages/
   - ./rebuild-all.bash
 script: ./run_tests
