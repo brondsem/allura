@@ -23,6 +23,10 @@ before_install:
   - sudo apt-get install -qq python-svn libjpeg8-dev zlib1g-dev
 install: "pip install -r requirements.txt"
 before_script:
+  - ls -d /usr/lib/python*
+  - ls -d /usr/lib/python*/*-packages
+  - ls -d $VIRTUAL_ENV/lib/python*
   - ln -s /usr/lib/python*/dist-packages/pysvn $VIRTUAL_ENV/lib/python*/site-packages/
   - ./rebuild-all.bash
-script: ./run_tests
+  - npm ci
+script: ./run_tests -p Allura
