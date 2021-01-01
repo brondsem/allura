@@ -16,6 +16,7 @@
 #       under the License.
 
 language: python
+dist: bionic  # Ubuntu 18.04
 jobs:
   include:
     - python: "2.7"
