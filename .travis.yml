@@ -19,14 +19,17 @@ language: python
 python:
   - "2.7"
   - "3.7"
+jobs:
+  include:
+    - python: "2.7"
+      env: PY_LIB_DIR=/usr/lib/python2.7
+    - python: "3.7"
+      env: PY_LIB_DIR=/usr/lib/python3
 before_install:
   - sudo apt-get install -qq python-svn libjpeg8-dev zlib1g-dev
 install: "pip install -r requirements.txt"
 before_script:
-  - ls -d /usr/lib/python*
-  - ls -d /usr/lib/python*/*-packages
-  - ls -d $VIRTUAL_ENV/lib/python*
-  - ln -s /usr/lib/python*/dist-packages/pysvn $VIRTUAL_ENV/lib/python*/site-packages/
+  - ln -s $PY_LIB_DIR/dist-packages/pysvn $VIRTUAL_ENV/lib/python*/site-packages/
   - ./rebuild-all.bash
-  - npm ci
-script: ./run_tests -p Allura
+  - npm install
+script: ./run_tests
