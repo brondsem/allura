@@ -29,12 +29,10 @@ jobs:
         - PYSVN_PKG=python3-svn
 before_install:
   - sudo apt-get install -qq $PYSVN_PKG libjpeg8-dev zlib1g-dev
+virtualenv:
+  system_site_packages: true
 install: "pip install -r requirements.txt"
 before_script:
-  - ls -d $PY_LIB_DIR/dist-packages/pysvn
-  - ls -d $VIRTUAL_ENV/lib/python*/site-packages/
-  - ln -s $PY_LIB_DIR/dist-packages/pysvn $VIRTUAL_ENV/lib/python*/site-packages/
-  - ls $VIRTUAL_ENV/lib/python*/site-packages/pysvn
   - ./rebuild-all.bash
   - npm install
 script: ./run_tests
