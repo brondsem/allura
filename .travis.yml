@@ -34,7 +34,7 @@ before_install:
 #  system_site_packages: true
 install:
   - pip install -r requirements.txt
-  - pip install https://sourceforge.net/projects/pysvn/files/pysvn/pysvn-1.9.12.tar.gz
+  - pip install https://sourceforge.net/projects/pysvn/files/pysvn/V1.9.12/pysvn-1.9.12.tar.gz/download
 before_script:
   - ./rebuild-all.bash
   - npm install
