@@ -29,9 +29,12 @@ jobs:
         - PYSVN_PKG=python3-svn
 before_install:
   - sudo apt-get install -qq $PYSVN_PKG libjpeg8-dev zlib1g-dev
-virtualenv:
-  system_site_packages: true
-install: "pip install -r requirements.txt"
+# only works on stock python (2.7 or 3.5)
+# virtualenv:
+#  system_site_packages: true
+install:
+  - pip install -r requirements.txt
+  - pip install https://sourceforge.net/projects/pysvn/files/pysvn/pysvn-1.9.12.tar.gz
 before_script:
   - ./rebuild-all.bash
   - npm install
