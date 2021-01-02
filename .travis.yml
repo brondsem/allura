@@ -16,15 +16,16 @@
 #       under the License.
 
 language: python
-dist: bionic  # Ubuntu 18.04
 jobs:
   include:
     - python: "2.7"
+      dist: bionic  # Ubuntu 18.04
       before_install:
         - sudo apt-get install -qq python-svn
       virtualenv:  # only works on stock python
         system_site_packages: true
     - python: "3.7"
+      dist: focal  # Ubuntu 20.04
       before_install:
         - sudo apt-get install -qq python3-cxx-dev libsvn-dev # for building pysvn
       before_script:
