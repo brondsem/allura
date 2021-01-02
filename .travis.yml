@@ -26,7 +26,7 @@ jobs:
         system_site_packages: true
     - python: "3.7"
       before_install:
-        - sudo apt-get install -qq python3-cxx-dev  # for building pysvn
+        - sudo apt-get install -qq python3-cxx-dev libsvn-dev # for building pysvn
       before_script:
         - pip install https://sourceforge.net/projects/pysvn/files/pysvn/V1.9.12/pysvn-1.9.12.tar.gz
 install:
