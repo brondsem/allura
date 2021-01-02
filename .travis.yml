@@ -20,18 +20,16 @@ dist: bionic  # Ubuntu 18.04
 jobs:
   include:
     - python: "2.7"
-      env:
-        - PY_LIB_DIR=/usr/lib/python2.7
-        - PYSVN_PKG=python-svn
+      before_install:
+        - sudo apt-get install -qq libjpeg8-dev zlib1g-dev
+        - sudo apt-get install -qq python-svn
+      # only works on stock python
+      virtualenv:
+        system_site_packages: true
     - python: "3.7"
-      env:
-        - PY_LIB_DIR=/usr/lib/python3
-        - PYSVN_PKG=python3-svn
-before_install:
-  - sudo apt-get install -qq $PYSVN_PKG libjpeg8-dev zlib1g-dev
-# only works on stock python (2.7 or 3.5)
-# virtualenv:
-#  system_site_packages: true
+      before_install:
+        - sudo apt-get install -qq libjpeg8-dev zlib1g-dev
+        - sudo apt-get install -qq python3-cxx-dev  # for pysvn
 install:
   - pip install -r requirements.txt
   - pip install https://sourceforge.net/projects/pysvn/files/pysvn/V1.9.12/pysvn-1.9.12.tar.gz/download
