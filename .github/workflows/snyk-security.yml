@@ -20,9 +20,9 @@ name: Snyk Security
 
 on:
   push:
-    branches: ["master" ]
+    branches: ["test_synk" ]
   pull_request:
-    branches: ["master"]
+    branches: ["test_synk"]
   workflow_dispatch:
 
 permissions:
