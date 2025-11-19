@@ -46,17 +46,9 @@ MACRO_PATTERN = r'\[\[([^\]\[]+)\]\]'
 # SHORT_REF_RE copied from markdown pre 3.0
 SHORT_REF_RE = markdown.inlinepatterns.NOIMG + r'\[([^\]]+)\]'
 
-# FORGE_LINK_RE copied from markdown pre 3.0's LINK_RE
-# TODO: replace these with newer approach, see ForgeLinkPattern
-NOBRACKET = r'[^\]\[]*'  # if not using regex-as-re-globally, must change "*" to {0,50} for performance mitigation
-BRK = (
-    r'\[(' +
-    (NOBRACKET + r'(\[')*6 +
-    (NOBRACKET + r'\])*')*6 +
-    NOBRACKET + r')\]'
-)
-FORGE_LINK_RE = markdown.inlinepatterns.NOIMG + BRK + \
-    r'''\(\s*(<.*?>|((?:(?:\(.*?\))|[^\(\)]))*?)\s*((['"])(.*?)\12\s*)?\)'''
+# Simple pattern to detect start of link - now used with InlineProcessor instead of complex regex
+# The new InlineProcessor approach uses iterative parsing instead of catastrophic backtracking regex
+FORGE_LINK_START = markdown.inlinepatterns.NOIMG + r'\['
 
 
 def clear_markdown_registry(reg: markdown.util.Registry, keep: list[str] = []):
@@ -111,7 +103,7 @@ class CommitMessageExtension(markdown.Extension):
 
         # remove all inlinepattern processors except short refs and links
         clear_markdown_registry(md.inlinePatterns, keep=['link'])
-        md.inlinePatterns.register(ForgeLinkPattern(SHORT_REF_RE, md, ext=self), 'short_reference', 0)
+        md.inlinePatterns.register(ForgeLinkPattern(FORGE_LINK_START, md, ext=self), 'short_reference', 0)
 
         # remove all default block processors except for paragraph
         clear_markdown_registry(md.parser.blockprocessors, keep=['paragraph'])
@@ -290,8 +282,8 @@ class ForgeExtension(markdown.Extension):
                                    'autolink_without_brackets',
                                    185)  # was '<escape' and 'escape' is priority 180; great num runs first, so: 185
         # replace the link pattern with our extended version
-        md.inlinePatterns.register(ForgeLinkPattern(FORGE_LINK_RE, md, ext=self), 'link', 160)
-        md.inlinePatterns.register(ForgeLinkPattern(SHORT_REF_RE, md, ext=self), 'short_reference', 130)
+        md.inlinePatterns.register(ForgeLinkPattern(FORGE_LINK_START, md, ext=self), 'link', 160)
+        md.inlinePatterns.register(ForgeLinkPattern(FORGE_LINK_START, md, ext=self), 'short_reference', 130)
         # macro must be processed before links
         md.inlinePatterns.register(ForgeMacroPattern(MACRO_PATTERN, md, ext=self), 'macro', 165)  # similar to above
 
@@ -351,37 +343,61 @@ class UserMentionInlinePattern(markdown.inlinepatterns.Pattern):
         return result
 
 
-class ForgeLinkPattern(markdown.inlinepatterns.Pattern):
-    # TODO: convert from extending Pattern to extending InlineProcessor
-    #  which is how core Markdown library in 3.0 made its base link parsing much faster.
-    # https://github.com/Python-Markdown/markdown/commit/d18c3d0acab0e7469c3284c897afcb61f9dd1fea
-
+class ForgeLinkPattern(markdown.inlinepatterns.InlineProcessor):
+    """
+    Forge link processor using InlineProcessor for better performance.
+    Converted from Pattern to InlineProcessor to avoid catastrophic backtracking.
+    Uses iterative parsing instead of complex nested regex patterns.
+    See: https://github.com/Python-Markdown/markdown/commit/d18c3d0acab0e7469c3284c897afcb61f9dd1fea
+    """
+    
     artifact_re = re.compile(r'((.*?):)?((.*?):)?(.+)')
+    # Simpler regex for link destination parsing - matches content within ()
+    RE_LINK = re.compile(r'''\(\s*(?:(<.*?>)\s*(?:(['"])(.*?)\2\s*)?)?\)''', re.DOTALL | re.UNICODE)
+    RE_TITLE_CLEAN = re.compile(r'\s')
 
-    def __init__(self, *args, **kwargs):
-        self.ext = kwargs.pop('ext')
-        super().__init__(*args, **kwargs)
+    def __init__(self, pattern, md, ext=None):
+        self.ext = ext
+        super().__init__(pattern, md)
 
-    def handleMatch(self, m):
-        el = etree.Element('a')
-        el.text = m.group(2)
-        is_link_with_brackets = False
-        try:
-            href = m.group(9)
-        except IndexError:
-            href = m.group(2)
+    def handleMatch(self, m, data):
+        """
+        Parse link using iterative approach instead of complex regex.
+        Returns (element, start_index, end_index) tuple.
+        """
+        # Parse the text content between []
+        text, index, handled = self.getText(data, m.end(0))
+        
+        if not handled:
+            return None, None, None
+        
+        # Check for short reference format [text] without ()
+        if index >= len(data) or data[index] != '(':
+            # This is a short reference like [artifact:ref]
             is_link_with_brackets = True
-            if el.text == 'x' or el.text == ' ':  # skip [ ] and [x] for markdown checklist
-                return '[' + el.text + ']'
-        try:
-            title = m.group(13)
-        except IndexError:
+            href = text
             title = None
-
+            
+            # skip [ ] and [x] for markdown checklist
+            if text == 'x' or text == ' ':
+                return '[' + text + ']', m.start(0), index
+            
+            # Check for TOC special case
+            if href == 'TOC':
+                return '[TOC]', m.start(0), index
+        else:
+            # Parse the link destination between ()
+            is_link_with_brackets = False
+            href, title, index, handled = self.getLink(data, index)
+            if not handled:
+                return None, None, None
+        
+        # Create the link element
+        el = etree.Element('a')
+        el.text = text
+        
         classes = ''
         if href:
-            if href == 'TOC':
-                return '[TOC]'  # skip TOC
             if self.artifact_re.match(href):
                 href, classes = self._expand_alink(href, is_link_with_brackets)
             el.set('href', self.unescape(href.strip()))
@@ -397,7 +413,131 @@ class ForgeLinkPattern(markdown.inlinepatterns.Pattern):
             text = el.text
             el = etree.Element('span')
             el.text = '[%s]' % text
-        return el
+        
+        return el, m.start(0), index
+
+    def getLink(self, data, index):
+        """
+        Parse data between () of [Text]() allowing recursive ().
+        Based on markdown 3.0+ LinkInlineProcessor.getLink implementation.
+        """
+        href = ''
+        title = None
+        handled = False
+
+        m = self.RE_LINK.match(data, pos=index)
+        if m and m.group(1):
+            # Matches [Text](<link> "title")
+            href = m.group(1)[1:-1].strip()
+            if m.group(3):
+                title = m.group(3)
+            index = m.end(0)
+            handled = True
+        elif m:
+            # Track bracket nesting for complex links like [text](url(with)parens)
+            bracket_count = 1
+            backtrack_count = 1
+            start_index = m.end()
+            index = start_index
+            last_bracket = -1
+
+            # Quote tracking for titles
+            quote = None
+            start_quote = -1
+            exit_quote = -1
+            ignore_matches = False
+
+            # Secondary quote tracking
+            alt_quote = None
+            start_alt_quote = -1
+            exit_alt_quote = -1
+
+            last = ''
+
+            for pos in range(index, len(data)):
+                c = data[pos]
+                if c == '(':
+                    if not ignore_matches:
+                        bracket_count += 1
+                    elif backtrack_count > 0:
+                        backtrack_count -= 1
+                elif c == ')':
+                    if ((exit_quote != -1 and quote == last) or 
+                        (exit_alt_quote != -1 and alt_quote == last)):
+                        bracket_count = 0
+                    elif not ignore_matches:
+                        bracket_count -= 1
+                    elif backtrack_count > 0:
+                        backtrack_count -= 1
+                        if backtrack_count == 0:
+                            last_bracket = index + 1
+
+                elif c in ("'", '"'):
+                    if not quote:
+                        ignore_matches = True
+                        backtrack_count = bracket_count
+                        bracket_count = 1
+                        start_quote = index + 1
+                        quote = c
+                    elif c != quote and not alt_quote:
+                        start_alt_quote = index + 1
+                        alt_quote = c
+                    elif c == quote:
+                        exit_quote = index + 1
+                    elif alt_quote and c == alt_quote:
+                        exit_alt_quote = index + 1
+
+                index += 1
+
+                if bracket_count == 0:
+                    if exit_quote >= 0 and quote == last:
+                        href = data[start_index:start_quote - 1]
+                        title = ''.join(data[start_quote:exit_quote - 1])
+                    elif exit_alt_quote >= 0 and alt_quote == last:
+                        href = data[start_index:start_alt_quote - 1]
+                        title = ''.join(data[start_alt_quote:exit_alt_quote - 1])
+                    else:
+                        href = data[start_index:index - 1]
+                    break
+
+                if c != ' ':
+                    last = c
+
+            if bracket_count != 0 and backtrack_count == 0:
+                href = data[start_index:last_bracket - 1]
+                index = last_bracket
+                bracket_count = 0
+
+            handled = bracket_count == 0
+
+        if title is not None:
+            title = self.RE_TITLE_CLEAN.sub(' ', markdown.inlinepatterns.dequote(self.unescape(title.strip())))
+
+        href = self.unescape(href).strip()
+
+        return href, title, index, handled
+
+    def getText(self, data, index):
+        """
+        Parse the content between [] resolving nested square brackets.
+        Based on markdown 3.0+ LinkInlineProcessor.getText implementation.
+        """
+        bracket_count = 1
+        text = []
+        for pos in range(index, len(data)):
+            c = data[pos]
+            if c == ']':
+                bracket_count -= 1
+                if bracket_count == 0:
+                    return ''.join(text), pos + 1, True
+                text.append(c)
+            elif c == '[':
+                bracket_count += 1
+                text.append(c)
+            else:
+                text.append(c)
+        
+        return '', index, False
 
     def _expand_alink(self, link, is_link_with_brackets):
         '''Return (href, classes) for an artifact link'''
