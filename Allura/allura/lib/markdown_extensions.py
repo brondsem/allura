@@ -353,7 +353,8 @@ class ForgeLinkPattern(markdown.inlinepatterns.InlineProcessor):
     
     artifact_re = re.compile(r'((.*?):)?((.*?):)?(.+)')
     # Simpler regex for link destination parsing - matches content within ()
-    RE_LINK = re.compile(r'''\(\s*(?:(<.*?>)\s*(?:(['"])(.*?)\2\s*)?)?\)''', re.DOTALL | re.UNICODE)
+    # Pattern from markdown 3.9 LinkInlineProcessor
+    RE_LINK = re.compile(r'''\(\s*(?:(<[^<>]*>)\s*(?:('[^']*'|"[^"]*")\s*)?\))?''', re.DOTALL | re.UNICODE)
     RE_TITLE_CLEAN = re.compile(r'\s')
 
     def __init__(self, pattern, md, ext=None):
@@ -398,8 +399,10 @@ class ForgeLinkPattern(markdown.inlinepatterns.InlineProcessor):
         
         classes = ''
         if href:
-            if self.artifact_re.match(href):
-                href, classes = self._expand_alink(href, is_link_with_brackets)
+            # Only try to expand artifact links if it's not an external URL
+            if not href.startswith(('http://', 'https://', 'ftp://', 'mailto:', '/', '#')):
+                if self.artifact_re.match(href):
+                    href, classes = self._expand_alink(href, is_link_with_brackets)
             el.set('href', self.unescape(href.strip()))
             el.set('class', classes)
         else:
@@ -429,8 +432,8 @@ class ForgeLinkPattern(markdown.inlinepatterns.InlineProcessor):
         if m and m.group(1):
             # Matches [Text](<link> "title")
             href = m.group(1)[1:-1].strip()
-            if m.group(3):
-                title = m.group(3)
+            if m.group(2):
+                title = m.group(2)[1:-1]  # Remove quotes
             index = m.end(0)
             handled = True
         elif m:
@@ -511,9 +514,15 @@ class ForgeLinkPattern(markdown.inlinepatterns.InlineProcessor):
             handled = bracket_count == 0
 
         if title is not None:
-            title = self.RE_TITLE_CLEAN.sub(' ', markdown.inlinepatterns.dequote(self.unescape(title.strip())))
+            title = markdown.inlinepatterns.dequote(title.strip())
+            if self.md:
+                title = self.unescape(title)
+            title = self.RE_TITLE_CLEAN.sub(' ', title)
 
-        href = self.unescape(href).strip()
+        if self.md:
+            href = self.unescape(href).strip()
+        else:
+            href = href.strip()
 
         return href, title, index, handled
 
